@@ -21,6 +21,8 @@ app.use(cors({
 app.use(express.json())
 app.use(cookieparser())
 
+// git addd problem
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.m8ywqwd.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
