@@ -1,19 +1,23 @@
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const express = require('express');
 const jwt = require('jsonwebtoken')
+const cookieparser = require('cookie-parser')
 require('dotenv').config();
-const cookieParser = require('cookie-parser')
 const cors = require('cors');
 const app = express()
 const port = process.env.PORT || 5000;
 
 // middllware
 app.use(cors({
-    origin: ['http://localhost:5173'],
+    origin: [
+        // 'http://localhost:5173',
+        'https://car-doctor-resources.web.app',
+        'https://car-doctor-resources.firebaseapp.com/'
+    ],
     credentials: true
 }))
 app.use(express.json())
-app.use(cookieParser())
+app.use(cookieparser())
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.m8ywqwd.mongodb.net/?retryWrites=true&w=majority`;
 
@@ -26,23 +30,18 @@ const client = new MongoClient(uri, {
     }
 });
 
-const logger = async (req, res, next) => {
-    console.log('logger middleware:', req.host, req.originalUrl)
+const logger = (req, res, next) => {
+    console.log(req.method, req.url)
     next();
 }
 
-const verifytoken = async (req, res, next) => {
-    const token = req.cookies?.token;
-    console.log('value of token in middleware', token)
-    if (!token) {
-        return res.status(401).send({ meessage: 'not authorized' })
-    }
+const verifytoken = (req, res, next) => {
+    const token = req.cookies.token
+    // console.log('verify token is', token)
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
         if (err) {
-            console.log(err)
-            return res.status(401).send({ meessage: 'not authrized' })
+            return res.status(401).send({ message: 'unathorized access' })
         }
-        console.log('value is not token', decoded)
         req.user = decoded;
         next();
     })
@@ -57,24 +56,32 @@ async function run() {
         const orderscollection = client.db('doctordb').collection('order')
 
         // token related
-
-        app.post('/jwt', logger, (req, res) => {
+        app.post('/jwt', logger, async (req, res) => {
             const user = req.body;
-            console.log(user)
+            console.log("token res", user)
             const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
             res
                 .cookie('token', token, {
                     httpOnly: true,
-                    secure: false,
+                    secure: true,
+                    sameSite: 'none'
                 })
                 .send({ success: true })
         })
 
-        app.get('/services', logger, async (req, res) => {
+        app.post('/logout', async (req, res) => {
+            const user = req.body;
+            console.log(user)
+            res.clearCookie('token', { maxAge: 0 }).send({ success: true })
+        })
+
+        // services related api
+        app.get('/services', async (req, res) => {
             const cursor = servicescollection.find()
             const result = await cursor.toArray()
             res.send(result)
         })
+
 
         app.get('/services/:id', async (req, res) => {
             const id = req.params.id;
@@ -87,14 +94,12 @@ async function run() {
             res.send(result)
         })
 
-        app.get('/orders', logger, verifytoken,  async (req, res) => {
+        app.get('/orders', logger, verifytoken, async (req, res) => {
             console.log(req.query.email)
-            // console.log('tok tok token', req.cookies.token)
-            console.log('user in the valid token is', req.user )
-            if (req.query.email !== req.user.email) {
-                return res.status(403).send({message: 'forbidden access'})
+            console.log('valid token', req.user)
+            if (req.user.email !== req.query.email) {
+                return res.status(403).send({ message: 'Data is invaild here' })
             }
-
             let query = {};
             if (req.query?.email) {
                 query = { email: req.query.email }
@@ -123,6 +128,7 @@ async function run() {
             const result = await orderscollection.updateOne(filter, updateDoc)
             res.send(result)
         })
+
 
         app.delete('/orders/:id', async (req, res) => {
             const id = req.params.id;
